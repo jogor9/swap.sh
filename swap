@@ -1,0 +1,55 @@
+#!/usr/bin/sh
+
+print_usage_and_exit() {
+        echo "usage: $0 [-v] [-p TEMPDIR] FILE0 FILE1"
+        exit 1
+}
+
+while getopts ':p:v' OPTION; do
+        case "$OPTION" in
+        p) parentdir="$OPTARG" ;;
+        v) verbose=v ;;
+        *)
+                echo "invalid option: '$OPTARG'"
+                print_usage_and_exit
+                ;;
+        esac
+done
+
+shift $((OPTIND - 1))
+
+if [ $# -lt 2 ]; then
+        print_usage_and_exit
+fi
+
+trap 'rmdir "$tempdir"' EXIT
+
+[ -z "$parentdir" ] && {
+        # move to parent directory of $1 to prevent copying across filesystems
+        # if $1 itself is a filesystem: ¯\_(ツ)_/¯ it will probably fail anyway
+        parentdir="$(dirname "$1")"
+}
+
+tempdir="$(mktemp -dp "$parentdir")" || {
+        echo "could not create temporary file in directory '$parentdir'"
+        exit 1
+}
+
+mv -"$verbose"nt "$tempdir" "$1" || exit 1
+tempfile="$tempdir/$(basename "$1")"
+mv -"$verbose"n "$2" "$1" || {
+        echo "recovering from error state: '$1' is now at '$tempfile'. " \
+                "moving to its original location..."
+        mv -"$verbose"n "$tempfile" "$1" || {
+                echo "...error recovery failed. '$1' resides at '$tempfile', " \
+                        "you may want to move it back manually"
+                exit 2
+        }
+        echo "...error recovery successful"
+        exit 1
+}
+mv -"$verbose"n "$tempfile" "$2" || {
+        echo "'$2' resides at '$tempfile', you may want to move it back " \
+                "manually"
+        exit 2
+}
